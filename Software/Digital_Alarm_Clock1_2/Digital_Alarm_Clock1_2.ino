@@ -2,24 +2,21 @@
 //Cyber City Circuits LLC
 //By Timothy Moody - 7 July 2021
 
-#include "RTClib.h"  //clock library
-#include <TM1637Display.h>
+#include "RTClib.h"         //RTC Library
+#include <TM1637Display.h>  //Display Library
 #include "Arduino.h"
 #include "SoftwareSerial.h"
 #include "DFRobotDFPlayerMini.h"
 #include <EEPROM.h>
-SoftwareSerial mySoftwareSerial(12, 11); // RX, TX
-DFRobotDFPlayerMini myDFPlayer;
-
 
 //Assign Pin Names
 int disp_di      =  2;
 int disp_clk     =  3;
 int snooze       =  4;
 int set_alarm    =  6;
-int alarmEnable =  7;
-int minutes       =  8;
-int hours         =  9;
+int alarmEnable  =  7;
+int minutes      =  8;
+int hours        =  9;
 int rtc_sqw      = 10;
 int df_play_rx   = 11;
 int df_play_tx   = 12;
@@ -34,15 +31,11 @@ int previousMinute;
 
 int alarmHour = EEPROM.read(2);
 int alarmMinute = EEPROM.read(0);
-
 int alarmTime;
 int alarmFlag = 0;
 
 //set variables for snooze timer
 int snoozeTimer;
-
-//set variable to hold volume
-float volumeValue;
 
 //set variables for saving alarm to eeprom
 int alarmSwitchState = 0;
@@ -52,25 +45,34 @@ int lastAlarmSwitchState = 0;
 int alarmMinutesEeprom = 0;
 int alarmHoursEeprom = 2;
 
+//Setup SoftwareSerial
+SoftwareSerial mySoftwareSerial(df_play_tx, df_play_rx); //RX, TX
 
-
+//Setup DFPlayer
+DFRobotDFPlayerMini myDFPlayer;
+float volumeValue; //set variable to hold volume
+int dfplayer_volume_max = 20; // Must Be =< 30.
 
 //Set up real time clock
 RTC_DS3231 rtc;
+
 //Set up the Display
 TM1637Display display = TM1637Display(disp_clk, disp_di);
+int displayBrightness = 1;
 
 int wait = 100;
 
 void setup() {
   mySoftwareSerial.begin(9600);
-  Serial.begin(115200);
-  pinMode(led,          OUTPUT);
-  pinMode(minutes,       INPUT_PULLUP);
-  pinMode(hours,         INPUT_PULLUP);
-  pinMode(set_alarm,    INPUT_PULLUP);
+  Serial.begin(9600);
+  Serial.println("Alarm Clock Starting...");
+  pinMode(led,         OUTPUT);
+  pinMode(minutes,     INPUT_PULLUP);
+  pinMode(hours,       INPUT_PULLUP);
+  pinMode(set_alarm,   INPUT_PULLUP);
   pinMode(alarmEnable, INPUT_PULLUP);
   pinMode(snooze,      INPUT_PULLUP);
+
 //set up the dfplayer
 if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate with mp3.
     Serial.println(F("Unable to begin:"));
@@ -79,11 +81,9 @@ if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate 
     while(true){
       delay(0); // Code to compatible with ESP8266 watch dog.
     }
-  }
-  Serial.println(F("DFPlayer Mini online."));
-  
-  myDFPlayer.volume(30);  //Set volume value. From 0 to 30
-
+}
+Serial.println(F("DFPlayer Mini online."));
+changeVolume();
   
 //set up the real time clock
   if (! rtc.begin()) {
@@ -93,15 +93,11 @@ if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate 
   // Check if the RTC lost power and if so, set the time
   if (rtc.lostPower()) {
     Serial.println("RTC lost power, lets set the time!");
-    // The following line sets the RTC to the date & time this sketch was compiled:
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    //rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0)); adjust these when buttons are pressed 
   }
 
   // Set the display brightness (0-7)
-  display.setBrightness(5);
+  display.setBrightness(displayBrightness);
   
   // Clear the display
   display.clear();
@@ -110,9 +106,6 @@ if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate 
 }
 
 void loop() {
-  
-
-
 //read the real time clock and store the values into varibles
   DateTime now = rtc.now();
   previousMinute = now.hour();
@@ -140,13 +133,8 @@ void loop() {
       Serial.println("switch changed a");
       EEPROM.write(alarmMinutesEeprom, alarmMinute);
       EEPROM.write(alarmHoursEeprom, alarmHour);
-
-      
-      }
+    }
      lastAlarmSwitchState = alarmSwitchState;
-    
-  
-  
      delay(wait);
   }
 
@@ -159,11 +147,8 @@ void loop() {
     //display clock time on screen
     display.showNumberDecEx(displaytime, 0b11100000, true);
     delay(wait);
-    
-    
-       
-        
-        //check to see if time has Changed if so update the display
+
+    //check to see if time has Changed if so update the display
     if(previousHour != now.hour() || previousMinute != now.minute()){
         display.clear();
         delay(wait);
@@ -180,9 +165,8 @@ void loop() {
     checkAlarm(alarmEnable);
     
     // read potentiometer for volume level
-    changeVolume(volume);
-    Serial.println(volumeValue);
-    myDFPlayer.volume(volumeValue);
+    changeVolume();
+    //Serial.println(volumeValue);
     snoozeCheck(snooze);
     alarmSwitchState = digitalRead(set_alarm);
     if(alarmSwitchState != lastAlarmSwitchState){
@@ -193,27 +177,10 @@ void loop() {
     lastAlarmSwitchState = alarmSwitchState;
      //toggle led when the alarm is on  
     if (digitalRead(set_alarm) == LOW && digitalRead(alarmEnable) == LOW && now.minute() == alarmMinute && now.hour() == alarmHour  && alarmFlag == 1){
-      togglePin(led);
-      delay(wait);
-      togglePin(led);
-      delay(wait);
-      togglePin(led);
-      delay(wait);
-      togglePin(led);
-      delay(wait);
-      togglePin(led);
-      delay(wait);
-      togglePin(led);
-      delay(wait);
+      togglePin(led); delay(wait);
      }
-  
-  }
-
+    }
 }
-
-
-
-
 
 void togglePin(int pinName){
   boolean pinState = digitalRead(pinName);
@@ -235,117 +202,87 @@ void adjustMinute(int pinName){
         if(previousMinute >= 60){
           previousMinute = 0;}
         rtc.adjust(DateTime(2014, 1, 21, now.hour(), previousMinute, 0));
-    } 
-
-    
-     }
+      } 
+}
 
 //Adjust Clock Hour when switch is set to time
 void adjustHour(int pinName){
-  
   DateTime now = rtc.now();
   int hourVal = digitalRead(pinName);
   if (hourVal == LOW) {
     previousHour = (previousHour + 1);
 // make sure that the minites cycle back to 0 when you get to 25
-    if(previousHour >= 25){
+    if(previousHour > 23){
       previousHour = 0;
       }
    rtc.adjust(DateTime(2014, 1, 21, previousHour, now.minute(), 0)); 
     }
 } 
 
-
-
 //check to see if alarm is enabled and the time matches, if so sound alarm 
 void checkAlarm(int pinName){
   DateTime now = rtc.now();
   int alarmSwitch = digitalRead(pinName);
   if (alarmSwitch == LOW && now.minute() == alarmMinute && now.hour() == alarmHour  && alarmFlag == 0){
-   Serial.println("Alarm BEEP BEEP BEEP");
-   myDFPlayer.play(1);
-   alarmFlag = 1;
- 
-   
-       }
-       //if the alarm is 
+    Serial.println("Alarm BEEP BEEP BEEP");
+    myDFPlayer.play(1);
+    alarmFlag = 1;
+  }
+  //if the alarm is 
   if (alarmSwitch == HIGH){
      myDFPlayer.pause();
-     
   }
-  
-         }
-
-
+}
 
 //adjust alarm minutes when switch set to alarm
 void adjustAlarmMinutes(int pinName){
   int minuteVal = digitalRead(pinName);
   if (minuteVal == LOW) {
-    
-     alarmMinute = alarmMinute + 1;
-     if(alarmMinute >= 60){
+    alarmMinute = alarmMinute + 1;
+    if(alarmMinute > 59){
         alarmMinute = 0;
-      }
+    }
   } 
- }
-
-
-
+}
 
 //adjust alarm hours when switch set to alarm
 void adjustAlarmHours(int pinName){
   int hourVal = digitalRead(pinName);
   if (hourVal == LOW) {
     alarmHour = alarmHour +1;
-    if(alarmHour >= 24){
+    if(alarmHour > 23){
       alarmHour = 0;
-        }
-   } 
-
+    }
+  } 
 }
 
-
 void snoozeCheck(int pinNameSnooze){ 
-  
   int snoozeVal = digitalRead(pinNameSnooze);
   if (snoozeVal == LOW){
-    
     snoozeTimer = alarmMinute;
     if (alarmFlag == 1){
       myDFPlayer.pause();
       alarmMinute = snoozeTimer + 5;
-    
       alarmFlag = 0;
-      myDFPlayer.pause();
+      
       //increment hour and calculate minutes if snooze time puts minutes past 59
       if(alarmMinute > 59){
         alarmMinute = (alarmMinute - 59);
+           if(alarmHour == 23){
+        alarmHour = 0;
+        alarmMinute = alarmMinute - 1;
+        }
+        else if(alarmHour != 23){
         alarmHour = alarmHour + 1;
+        alarmMinute = alarmMinute - 1;
+        }
       }
     }
-
-
-
-    
   }
-  
-
 }
-
 
 //Change the volume for the dfplayer
-void changeVolume(int pinName){
-
-  
- 
-  volumeValue = ((analogRead(pinName)) * 30.00) / 1024;
-  
-}
-
-
-
-
-
-      
-      
+void changeVolume(){
+  volumeValue = ((analogRead(volume)) * dfplayer_volume_max) / 1024.00;
+  myDFPlayer.volume(volumeValue);
+}      
